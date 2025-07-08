@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Éditeur de Logigramme</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+    crossorigin="anonymous">
+  <style>
+    body {
+      padding: 2em;
+      background: #f8f9fa;
+    }
+
+    .section {
+      background: white;
+      padding: 2em;
+      border-radius: 0.5rem;
+      box-shadow: 0 0 1rem rgba(0, 0, 0, 0.05);
+      margin-bottom: 2em;
+    }
+
+    .question,
+    .result {
+      margin: 2em 0;
+      padding: 1.5em;
+      background: white;
+      border-radius: 0.5rem;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .options {
+      margin-top: 1em;
+    }
+
+    .options button {
+      margin-right: 1em;
+    }
+
+    #restartBtn {
+      margin-top: 2em;
+    }
+  </style>
+</head>
+
+<body>
+  <h2 hidden id="logigrammeTitle"></h2>
+  <div hidden id="formUploadStructure" class="section">
+    <label for="uploadStructureInput">Importer une structure de logigramme</label>
+    <input id="uploadStructureInput" class="form-control" type="file" />
+    <button id="loadStructureBtn" class="btn btn-primary mt-2">Charger la structure</button>
+  </div>
+  <div class="section">
+    <label for="titleText">Titre du logigramme</label>
+    <input id="titleText" class="form-control" type="text" />
+    <button disabled id="saveTitle" class="btn btn-primary mt-2">💾 Enregistrer le titre</button>
+  </div>
+  <div class="section">
+    <h2>Ajouter une Question</h2>
+    <input disabled id="questionId" class="form-control" type="text" />
+    <label for="questionText">Texte de la question</label>
+    <input id="questionText" class="form-control" type="text" />
+    <label for="questionYes">Si OUI, aller à :</label>
+    <select id="questionYes" class="form-select"></select>
+    <label for="questionNo">Si NON, aller à :</label>
+    <select id="questionNo" class="form-select"></select>
+    <button disabled id="saveQuestion" class="btn btn-primary mt-2">💾 Enregistrer la question</button>
+    <table class="table table-striped mt-3" id="questionsTable">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Texte</th>
+          <th>Oui →</th>
+          <th>Non →</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div hidden id="resultsSection" class="section">
+    <div hidden id="resultForm">
+      <h2>Modifier un Résultat</h2>
+      <input id="resultId" class="form-control" type="hidden" />
+      <label for="resultText">Texte du résultat</label>
+      <input id="resultText" class="form-control" type="text" />
+      <button disabled id="saveResult" class="btn btn-primary mt-2">💾 Enregistrer le résultat</button>
+    </div>
+    <table class="table table-striped mt-3" id="resultsTable">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Texte</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <button hidden id="generateInteractiveHTML" class="btn btn-success">📄 Exporter en HTML interactif</button>
+  <button id="saveStructureInLocal" class="btn btn-success">📄 Sauver le logigramme en session</button>
+  <button id="downloadStructure" class="btn btn-success">📄 Télécharger la structure du logigramme</button>
+  <button id="uploadStructure" class="btn btn-success">📄 Charger une structure de logigramme</button>
+  <div id="htmlExportMsg" class="mt-2"></div>
+
+  <script>
+    let title;
+    let questions = {};
+    let results = {};
+
+    function generateNewId(prefix) {
+      let i = 0;
+      while (questions[prefix + i] || results[prefix + i]) i++;
+      return prefix + i;
+    }
+
+    function updateSelectOptions() {
+      const selects = [document.getElementById("questionYes"), document.getElementById("questionNo")];
+      selects.forEach(sel => {
+        sel.innerHTML = '';
+        sel.appendChild(new Option("➕ Nouvelle question", "__new_question__"));
+        sel.appendChild(new Option("➕ Nouveau résultat", "__new_result__"));
+        Object.entries(questions).forEach(([qid, q]) => sel.appendChild(new Option("Question: " + (q.text || qid + " ❓"), qid)));
+        Object.entries(results).forEach(([rid, r]) => sel.appendChild(new Option("Résultat: " + (r.result || rid + " 🎯"), rid)));
+      });
+      toggleQuestionSaveBtn();
+    }
+
+    function toggleQuestionSaveBtn() {
+      const text = document.getElementById("questionText").value.trim();
+      const yesVal = document.getElementById("questionYes").value;
+      const noVal = document.getElementById("questionNo").value;
+      document.getElementById("saveQuestion").disabled = !(text && yesVal && noVal);
+    }
+
+    function toggleTitleSaveBtn() {
+      const titleVal = document.getElementById("titleText").value.trim();
+      document.getElementById("saveTitle").disabled = !(titleVal);
+    }
+
+    function toggleResultSaveBtn() {
+      const id = document.getElementById("resultId").value.trim();
+      const resultText = document.getElementById("resultText").value.trim();
+      document.getElementById("saveResult").disabled = !(id && resultText);
+    }
+
+    document.getElementById("titleText").addEventListener("input", toggleTitleSaveBtn);
+    document.getElementById("questionText").addEventListener("input", toggleQuestionSaveBtn);
+    document.getElementById("resultText").addEventListener("input", toggleResultSaveBtn);
+    document.getElementById("saveTitle").addEventListener("click", () => {
+      title = document.getElementById("titleText").value.trim();
+      document.getElementById("titleText").value = '';
+      document.getElementById("saveTitle").disabled = true;
+      displayTitle(title);
+    });
+    document.getElementById("questionYes").addEventListener("change", toggleQuestionSaveBtn);
+    document.getElementById("questionNo").addEventListener("change", toggleQuestionSaveBtn);
+    document.getElementById("saveQuestion").addEventListener("click", () => {
+      let id = document.getElementById("questionId").value.trim();
+      if (!id) {
+        id = generateNewId("q");
+        document.getElementById("questionId").value = id;
+      }
+      const text = document.getElementById("questionText").value.trim();
+      let yesValue = document.getElementById("questionYes").value;
+      let noValue = document.getElementById("questionNo").value;
+
+      questions[id] = questions[id] || { text: "", yes: "", no: "" };
+
+      if (yesValue === "__new_question__") {
+        const newQId = generateNewId("q");
+        questions[newQId] = { text: "", yes: "", no: "" };
+        yesValue = newQId;
+      } else if (yesValue === "__new_result__") {
+        const newRId = generateNewId("result_");
+        results[newRId] = { result: "" };
+        yesValue = newRId;
+      }
+
+      if (noValue === "__new_question__") {
+        const newQId = generateNewId("q");
+        questions[newQId] = { text: "", yes: "", no: "" };
+        noValue = newQId;
+      } else if (noValue === "__new_result__") {
+        const newRId = generateNewId("result_");
+        results[newRId] = { result: "" };
+        noValue = newRId;
+      }
+
+      questions[id] = { text, yes: yesValue, no: noValue };
+
+      document.getElementById("questionId").value = "";
+      document.getElementById("questionText").value = "";
+      updateSelectOptions();
+      refreshTables();
+    });
+    document.getElementById("saveResult").addEventListener("click", () => {
+      document.getElementById('resultForm').hidden = true;
+      const id = document.getElementById("resultId").value.trim();
+      const resultText = document.getElementById("resultText").value.trim();
+      if (!id) return alert("Veuillez indiquer un ID");
+      results[id] = { result: resultText };
+      updateSelectOptions();
+      refreshTables();
+    });
+
+    function displayTitle(title) {
+      document.getElementById('logigrammeTitle').textContent = title;
+      document.getElementById('logigrammeTitle').hidden = false;
+    }
+
+    function refreshTables() {
+      const qt = document.querySelector("#questionsTable tbody");
+      const rt = document.querySelector("#resultsTable tbody");
+      qt.innerHTML = "";
+      rt.innerHTML = "";
+
+      Object.entries(questions).forEach(([id, q]) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${id}</td><td>${q.text}</td><td>
+          ${questions[q.yes]?.text ? "Question : " + questions[q.yes].text : results[q.yes]?.result ? "Résultat : " + results[q.yes].result : q.yes}
+          </td><td>
+          ${questions[q.no]?.text ? "Question : " + questions[q.no].text : results[q.no]?.result ? "Résultat : " + results[q.no].result : q.no}
+          </td>
+          <td><button class="btn" onclick="editQuestion('${id}')">✏️</button> <button class="btn" onclick="deleteQuestion('${id}')">🗑️</button></td>`;
+        qt.appendChild(tr);
+      });
+
+      const hideResultsSection = Object.entries(results).length ? false : true;
+      document.getElementById('resultsSection').hidden = hideResultsSection;
+
+      Object.entries(results).forEach(([id, r]) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${id}</td><td>${r.result}</td>
+          <td><button class="btn" onclick="editResult('${id}')">✏️</button> <button class="btn" onclick="deleteResult('${id}')">🗑️</button></td>`;
+        rt.appendChild(tr);
+      });
+
+      if (isValidLogigramStructure(createStructure(title, questions, results))) {
+        document.getElementById('generateInteractiveHTML').hidden = false;
+      } else {
+        document.getElementById('generateInteractiveHTML').hidden = true;
+      }
+    }
+
+    function editQuestion(id) {
+      const q = questions[id];
+      document.getElementById("questionId").value = id;
+      document.getElementById("questionText").value = q.text;
+      document.getElementById("questionYes").value = q.yes;
+      document.getElementById("questionNo").value = q.no;
+      toggleQuestionSaveBtn();
+    }
+
+    function deleteQuestion(id) {
+      const isReferenced = Object.values(questions).some(q => q.yes === id || q.no === id);
+      Object.entries(questions).forEach(([qid, q]) => {
+        if (q.yes === id) q.yes = "";
+        if (q.no === id) q.no = "";
+      });
+      if (confirm("Supprimer la question " + id + " ?")) {
+        delete questions[id];
+        updateSelectOptions();
+        refreshTables();
+      }
+    }
+
+    function deleteResult(id) {
+      const isReferenced = Object.values(questions).some(q => q.yes === id || q.no === id);
+      Object.entries(questions).forEach(([qid, q]) => {
+        if (q.yes === id) q.yes = "";
+        if (q.no === id) q.no = "";
+      });
+      if (confirm("Supprimer le résultat " + id + " ?")) {
+        delete results[id];
+        updateSelectOptions();
+        refreshTables();
+      }
+    }
+
+    function editResult(id) {
+      document.getElementById('resultForm').hidden = false;
+      const r = results[id];
+      document.getElementById("resultId").value = id;
+      document.getElementById("resultText").value = r.result;
+    }
+
+    function createStructure(title, questions, results) {
+      return { title: title, questions, results };
+    }
+
+    function importStructure(structure) {
+      results = structure.results;
+      questions = structure.questions;
+      title = structure.title;
+      displayTitle(title);
+    }
+
+    function isValidLogigramStructure(structure) {
+      const expectedKeys = ["title", "questions", "results"];
+      // Vérifie les clés principales
+      const objKeys = Object.keys(structure);
+      if (objKeys.length !== expectedKeys.length || !expectedKeys.every(k => objKeys.includes(k))) {
+        return false;
+      }
+      // Vérifie que title est une chaîne
+      if (typeof structure.title !== "string") {
+        return false;
+      }
+      // Vérifie les questions
+      if (typeof structure.questions !== "object" || structure.questions === null) return false;
+      for (const [qid, q] of Object.entries(structure.questions)) {
+        const qKeys = Object.keys(q);
+        if (qKeys.length !== 3 || !qKeys.includes("text") || !qKeys.includes("yes") || !qKeys.includes("no")) {
+          return false;
+        }
+        if (typeof q.text !== "string" || typeof q.yes !== "string" || typeof q.no !== "string") {
+          return false;
+        }
+      }
+      // Vérifie les résultats
+      if (typeof structure.results !== "object" || structure.results === null) return false;
+      for (const [rid, r] of Object.entries(structure.results)) {
+        const rKeys = Object.keys(r);
+        if (rKeys.length !== 1 || !rKeys.includes("result")) {
+          return false;
+        }
+        if (typeof r.result !== "string") {
+          return false;
+        }
+      }
+      // Vérifie que tous les chemins 'yes' et 'no' pointent vers une clé valide
+      const validTargets = new Set([
+        ...Object.keys(structure.questions),
+        ...Object.keys(structure.results)
+      ]);
+      for (const q of Object.values(structure.questions)) {
+        if (!validTargets.has(q.yes) || !validTargets.has(q.no)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    document.getElementById("saveStructureInLocal").addEventListener("click", () => {
+      const structure = createStructure(title, questions, results);
+      if (sessionStorage.getItem('structure') && confirm('Voulez-vous écraser la structure sauvegardée en session?')) {
+        sessionStorage.setItem('structure', JSON.stringify(structure));
+      } else if (!sessionStorage.getItem('structure')) {
+        sessionStorage.setItem('structure', JSON.stringify(structure));
+      }
+    });
+
+    window.onload = function () {
+      const structure = JSON.parse(sessionStorage.getItem('structure'));
+      if (structure && confirm('Voulez-vous charger la structure sauvegardée en session?')) {
+        importStructure(structure);
+      }
+      updateSelectOptions();
+      refreshTables();
+    };
+
+    document.getElementById("downloadStructure").addEventListener('click', () => {
+      const structure = createStructure(title, questions, results);
+      const blob = new Blob([JSON.stringify(structure, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "structure_logigramme.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById("uploadStructure").addEventListener('click', () => {
+      document.getElementById("formUploadStructure").hidden = false;
+    });
+
+    document.getElementById("loadStructureBtn").addEventListener("click", () => {
+      const input = document.getElementById("uploadStructureInput");
+      const file = input.files[0];
+      if (!file) {
+        alert("Veuillez sélectionner un fichier JSON.");
+        return;
+      }
+      const reader = new FileReader();
+
+      reader.onload = function (e) {
+        try {
+          const structure = JSON.parse(e.target.result);
+          document.getElementById("formUploadStructure").hidden = true;
+          document.getElementById("uploadStructureInput").value = '';
+          if (!structure.title || !structure.questions || !structure.results) {
+            throw new Error("Structure invalide.");
+          }
+          importStructure(structure);
+          refreshTables();
+        } catch (err) {
+          alert("Erreur lors du chargement du fichier : " + err.message);
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    document.getElementById("generateInteractiveHTML").addEventListener("click", () => {
+      const structure = createStructure(title, questions, results);
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html lang="fr">
+        <head>
+          <meta charset="UTF-8" />
+          <title>Logigramme Interactif</title>
+          <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
+          <style>
+            body {
+              font-family: sans-serif;
+              padding: 2em;
+              background: #f8f9fa;
+            }
+
+            .question,
+            .result {
+              margin: 2em 0;
+              padding: 1.5em;
+              background: white;
+              border-radius: 0.5rem;
+              box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+            }
+
+            .options {
+              margin-top: 1em;
+            }
+
+            .options button {
+              margin-right: 1em;
+            }
+
+            #restartBtn {
+              margin-top: 2em;
+            }
+          </style>
+        </head>
+
+        <body class="container">
+          <h2 id="logigrammeTitle"></h2>
+          <div id="logigramme" class="mt-4"></div>
+          <button id="restartBtn" class="btn btn-secondary">🔁 Recommencer</button>
+          <script>
+            const structure = ${JSON.stringify(structure)};
+            const history = [];
+            document.getElementById('logigrammeTitle').textContent = structure.title;
+
+            function renderQuestion(id) {
+              const container = document.getElementById("logigramme");
+              const q = structure.questions[id];
+              const div = document.createElement("div");
+              div.className = "question";
+              div.dataset.id = id;
+              div.innerHTML = "<h5 class='mb-3'>" + q.text + "</h5>";
+
+              const opts = document.createElement("div");
+              opts.className = "options d-flex gap-2";
+
+              ["yes", "no"].forEach(resp => {
+                const btn = document.createElement("button");
+                btn.className = "btn btn-outline-primary";
+                btn.textContent = resp === "yes" ? "Oui" : "Non";
+
+                btn.onclick = () => {
+                  // Gérer l'état actif des boutons
+                  const allBtns = opts.querySelectorAll("button");
+                  allBtns.forEach(b => b.className = "btn btn-outline-primary");
+                  btn.className = "btn btn-primary";
+
+                  // Supprimer les éléments suivants
+                  const index = history.findIndex(h => h.id === id);
+                  if (index !== -1) {
+                    history.splice(index + 1);
+                    const children = Array.from(container.children);
+                    for (let i = children.length - 1; i > index; i--) {
+                      container.removeChild(children[i]);
+                    }
+                  } else {
+                    history.push({ id });
+                  }
+
+                  renderNext(q[resp]);
+                };
+
+                opts.appendChild(btn);
+              });
+
+              div.appendChild(opts);
+              container.appendChild(div);
+            }
+
+
+            function renderResult(id) {
+              const container = document.getElementById("logigramme");
+              const r = structure.results[id];
+              const div = document.createElement("div");
+              div.className = "result";
+              div.dataset.id = id;
+              div.innerHTML = "<h5>Résultat :</h5><p class='mt-2'>" + r.result + "</p>";
+              history.push({ id });
+              container.appendChild(div);
+            }
+
+            function renderNext(id) {
+              if (structure.questions[id]) {
+                renderQuestion(id);
+              } else if (structure.results[id]) {
+                renderResult(id);
+              }
+            }
+
+            document.getElementById("restartBtn").onclick = () => {
+              document.getElementById("logigramme").innerHTML = "";
+              history.length = 0;
+              renderQuestion("q0");
+            };
+
+            renderQuestion("q0");
+          <\/script>
+        </body>
+        </html>`;
+      const blob = new Blob([htmlContent], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "logigramme_interactif.html";
+      a.click();
+      URL.revokeObjectURL(url);
+      document.getElementById("htmlExportMsg").innerText = "✅ Fichier HTML interactif généré.";
+    });  
+  </script>
+</body>
+
+</html>
