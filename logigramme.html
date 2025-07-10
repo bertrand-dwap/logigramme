@@ -100,6 +100,7 @@
   </div>
 
   <button hidden id="generateInteractiveHTML" class="btn btn-success">📄 Exporter en HTML interactif</button>
+  <button hidden id="generateNonInteractiveHTML" class="btn btn-success">📄 Exporter le logigramme visuel</button>
   <button id="saveStructureInLocal" class="btn btn-success">📄 Sauver le logigramme en session</button>
   <button id="downloadStructure" class="btn btn-success">📄 Télécharger la structure du logigramme</button>
   <button id="uploadStructure" class="btn btn-success">📄 Charger une structure de logigramme</button>
@@ -240,8 +241,10 @@
 
       if (isValidLogigramStructure(createStructure(title, questions, results))) {
         document.getElementById('generateInteractiveHTML').hidden = false;
+        document.getElementById('generateNonInteractiveHTML').hidden = false;
       } else {
         document.getElementById('generateInteractiveHTML').hidden = true;
+        document.getElementById('generateNonInteractiveHTML').hidden = true;
       }
     }
 
@@ -533,7 +536,73 @@
       a.click();
       URL.revokeObjectURL(url);
       document.getElementById("htmlExportMsg").innerText = "✅ Fichier HTML interactif généré.";
-    });  
+    });
+
+    function logigramToMermaid(structure) {
+      try {
+        if (!isValidLogigramStructure(structure)) {
+            throw new Error("Structure invalide.");
+        }
+        let lines = ["graph TD"];
+
+        for (const [id, q] of Object.entries(structure.questions)) {
+            const label = q.text.replace(/"/g, '\\"');
+            lines.push(`  ${id}["${label}"]`);
+            const yesTarget = q.yes;
+            const yesLabel = structure.questions[yesTarget]
+                ? structure.questions[yesTarget].text.replace(/"/g, '\\"')
+                : structure.results[yesTarget]?.result.replace(/"/g, '\\"') || yesTarget;
+            lines.push(`  ${id} -->|Oui| ${yesTarget}["${yesLabel}"]`);
+            const noTarget = q.no;
+            const noLabel = structure.questions[noTarget]
+                ? structure.questions[noTarget].text.replace(/"/g, '\\"')
+                : structure.results[noTarget]?.result.replace(/"/g, '\\"') || noTarget;
+            lines.push(`  ${id} -->|Non| ${noTarget}["${noLabel}"]`);
+        }
+
+        return lines.join("\n");
+
+      } catch (err) {
+        alert("Erreur lors de la conversion : " + err.message);
+      }
+    }
+
+    document.getElementById("generateNonInteractiveHTML").addEventListener("click", () => {
+      const structure = createStructure(title, questions, results);
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html lang="fr">
+        <head>
+          <meta charset="UTF-8" />
+          <title>Logigramme Visuel</title>
+          <script type="module">
+            import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+            mermaid.initialize({ startOnLoad: true });
+          <\/script>
+        </head>
+
+        <body>
+          <h2 id="logigrammeTitle"></h2>
+          <div class="mermaid" id="logigrammeMermaid"></div>
+          <script>
+            const structure = ${JSON.stringify(structure)};
+            const code = \`${logigramToMermaid(structure)}\`;
+            document.getElementById("logigrammeMermaid").innerHTML = code;
+            mermaid.init(undefined, "#logigrammeMermaid");
+            document.getElementById('logigrammeTitle').textContent = structure.title;
+          <\/script>
+        </body>
+        </html>`;
+      const blob = new Blob([htmlContent], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "logigramme_visuel.html";
+      a.click();
+      URL.revokeObjectURL(url);
+      document.getElementById("htmlExportMsg").innerText = "✅ Fichier HTML visuel généré.";
+    });
+
   </script>
 </body>
 
